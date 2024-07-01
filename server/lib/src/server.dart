@@ -21,6 +21,7 @@ import 'package:appium_flutter_server/src/handler/status.dart';
 import 'package:appium_flutter_server/src/handler/wait/wait_for_absent.dart';
 import 'package:appium_flutter_server/src/handler/wait/wait_for_visible.dart';
 import 'package:appium_flutter_server/src/logger.dart';
+import 'package:appium_flutter_server/src/utils/test_utils.dart';
 import 'package:shelf_plus/shelf_plus.dart' as shelf_plus;
 
 import 'package:appium_flutter_server/src/handler/clear.dart';
@@ -35,6 +36,7 @@ const PORT_RANGE = [9000, 9020];
 class FlutterServer {
   late shelf_plus.RouterPlus _app;
   static final FlutterServer _instance = FlutterServer._();
+  late int port;
 
   FlutterServer._() {
     _app = shelf_plus.Router().plus;
@@ -78,8 +80,8 @@ class FlutterServer {
         "/session/<sessionId>/appium/gestures/double_click"));
     _registerPost(ScrollTillVisibleHandler(
         "/session/<sessionId>/appium/gestures/scroll_till_visible"));
-    _registerPost(DragAndDrop(
-        "/session/<sessionId>/appium/gestures/drag_drop"));
+    _registerPost(
+        DragAndDrop("/session/<sessionId>/appium/gestures/drag_drop"));
 
     /* Wait handlers */
     _registerPost(
@@ -106,19 +108,28 @@ class FlutterServer {
   void startServer() async {
     final [startPort, endPort] = PORT_RANGE;
     int bindingPort = startPort;
+    bool isServerStarted = false;
+    while (bindingPort <= endPort && !isServerStarted) {
+      isServerStarted = await _runServer(bindingPort++);
+    }
 
-    while (bindingPort <= endPort) {
-      try {
-        await shelf_plus.shelfRun(() => _app.call,
-            defaultBindAddress: "0.0.0.0",
-            defaultBindPort: bindingPort,
-            defaultEnableHotReload: false);
-        log("Appium flutter server is listening on port $bindingPort");
-        break;
-      } catch (e) {
-        log("Unable to start server on port $bindingPort.");
-      }
-      bindingPort++;
+    if (isServerStarted) {
+      port = bindingPort - 1;
+      await writePortToFile(port);
+    }
+  }
+
+  _runServer(int port) async {
+    try {
+      await shelf_plus.shelfRun(() => _app.call,
+          defaultBindAddress: "0.0.0.0",
+          defaultBindPort: port,
+          defaultEnableHotReload: false);
+      log("Appium flutter server is listening on port $port");
+      return true;
+    } catch (e) {
+      log("Unable to start server on port $port. Error: $e");
+      return false;
     }
   }
 }
